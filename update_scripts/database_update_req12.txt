@@ -1,20 +1,7 @@
+-- ** In BIOMART **
 --add probesets id for bio assay analysis data
 alter table BIOMART.BIO_ASSAY_ANALYSIS_DATA add (PROBESET_ID NUMBER(22,0));
 alter table BIOMART.BIO_ASSAY_ANALYSIS_DATA_TEA add (PROBESET_ID NUMBER(22,0));
-
---add an id to de_mrna_annotation (needed to use it as a Grails domain), create sequence, trigger, and update existing rows
-alter table DEAPP.DE_MRNA_ANNOTATION add (DE_MRNA_ANNOTATION_ID NUMBER(22,0));
-CREATE SEQUENCE "DEAPP"."SEQ_DE_MRNA_ANNOTATION_ID"  MINVALUE 1 MAXVALUE 9999999999999999999999999999 INCREMENT BY 1 START WITH 1 CACHE 20 NOORDER NOCYCLE;
-update de_mrna_annotation set de_mrna_annotation_id = seq_de_mrna_annotation_id.nextval;
-
-CREATE OR REPLACE TRIGGER trg_de_mrna_annotation_id
-BEFORE INSERT ON de_mrna_annotation
-FOR EACH ROW
-BEGIN
-SELECT seq_de_mrna_annotation_id.nextval
-INTO :new.de_mrna_annotation_id
-FROM dual;
-END;
 
 --update existing data with probeset id (warning: works if the platform has been loaded and the probeset exists)
 update bio_assay_analysis_data a set probeset_id = (
@@ -36,6 +23,35 @@ and platform_accession= c.gpl_id
 where a.feature_group_name in (select c.probe_id from deapp.de_mrna_annotation c)
 and a.bio_assay_platform_id in (select bio_assay_platform_id from bio_assay_platform where platform_accession in (select gpl_id from deapp.de_mrna_annotation));
 
+  CREATE OR REPLACE FORCE VIEW "BIOMART"."BIO_MARKER_EXP_ANALYSIS_MV" ("BIO_MARKER_ID", "BIO_EXPERIMENT_ID", "BIO_ASSAY_ANALYSIS_ID", "MV_ID") AS 
+  SELECT DISTINCT t4.bio_marker_id,
+    t1.bio_experiment_id,
+    t1.bio_assay_analysis_id,
+    t1.bio_assay_analysis_id*100+t4.bio_marker_id
+  FROM BIO_ASSAY_ANALYSIS_DATA t1,
+    BIO_EXPERIMENT t2,
+    DEAPP.DE_MRNA_ANNOTATION t3,
+    BIO_MARKER t4
+  WHERE t1.bio_experiment_id       = t2.bio_experiment_id
+  AND t2.bio_experiment_type       ='Experiment'
+  AND t3.probeset_id= t1.probeset_id;
+
+-- ** In DEAPP **
+--add an id to de_mrna_annotation (needed to use it as a Grails domain), create sequence, trigger, and update existing rows
+alter table DEAPP.DE_MRNA_ANNOTATION add (DE_MRNA_ANNOTATION_ID NUMBER(22,0));
+CREATE SEQUENCE "DEAPP"."SEQ_DE_MRNA_ANNOTATION_ID"  MINVALUE 1 MAXVALUE 9999999999999999999999999999 INCREMENT BY 1 START WITH 1 CACHE 20 NOORDER NOCYCLE;
+update de_mrna_annotation set de_mrna_annotation_id = seq_de_mrna_annotation_id.nextval;
+
+CREATE OR REPLACE TRIGGER trg_de_mrna_annotation_id
+BEFORE INSERT ON de_mrna_annotation
+FOR EACH ROW
+BEGIN
+SELECT seq_de_mrna_annotation_id.nextval
+INTO :new.de_mrna_annotation_id
+FROM dual;
+END;
+
+-- ** In SEARCHAPP **
 --add probesets id for gene signature item
 alter table SEARCHAPP.SEARCH_GENE_SIGNATURE_ITEM add (PROBESET_ID NUMBER(22,0));
 
@@ -52,6 +68,7 @@ and platform_accession= c.gpl_id
 where a.bio_assay_feature_group_id in (select d.bio_assay_feature_group_id from deapp.de_mrna_annotation c, biomart.bio_assay_feature_group d where d.feature_group_name=c.probe_id )
 and a.search_gene_signature_id in (select search_gene_signature_id from bio_assay_platform c, search_gene_signature d where c.bio_assay_platform_id=d.bio_assay_platform_id and platform_accession in (select gpl_id from deapp.de_mrna_annotation));
 
+-- ** In TM_CZ **
 --updated procedure to load gene expression analysis results: fill probeset id instead of features groups (takes an additional parameter for the platform accession)
 create or replace PROCEDURE         "I2B2_LOAD_OMICSOFT_DATA" 
 (analysis_id IN number
